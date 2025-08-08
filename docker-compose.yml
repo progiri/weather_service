@@ -1,0 +1,62 @@
+version: '3'
+
+services:
+  api: &api
+    build:
+      context: .
+      dockerfile: compose/local/Dockerfile
+    command: bash -c "
+        ./src/manage.py migrate
+        && ./src/manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - ./src/:/app/src/
+    ports:
+      - 8000:8000
+    env_file:
+      - compose/local/.env
+    depends_on:
+      - redis
+      - pg
+    networks:
+      - compose_network
+
+  ws:
+    <<: *api
+    command: bash -c "daphne -b 0.0.0.0 -p 8000 core.asgi:application"
+    ports:
+      - 8010:8000
+
+  celeryworker:
+    <<: *api
+    command: bash -c "
+      cd src/
+      && celery -A core.celery worker -l info"
+    ports: []
+
+  redis:
+    image: redis:6-alpine
+    volumes:
+      - redis-data:/data
+    networks:
+    - compose_network
+
+  pg:
+    image: postgres:latest
+    ports:
+      - 5432:5432
+    volumes:
+      - pg-data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_USER=farmyet
+      - POSTGRES_PASSWORD=XwPlw43p9qSZ
+      - POSTGRES_DB=farmyet
+    networks:
+    - compose_network
+
+volumes:
+  redis-data:
+  pg-data:
+
+networks:
+  compose_network:
+    external: true
