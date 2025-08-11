@@ -21,6 +21,9 @@ class Provider(models.Model):
     def __str__(self):
         return self.name
 
+    def get_token(self):
+        return self.tokens.first()
+
 
 class ProviderToken(models.Model):
     provider = models.ForeignKey(
@@ -159,7 +162,7 @@ class WeatherData(models.Model):
         verbose_name_plural = _("Погодные данные")
 
     def __str__(self):
-        return f"{self.meteo_point_id} {self.parameter_id} {self.timestamp_utc}"
+        return f"{self.meteo_point_id} {self.parameter} {self.timestamp_utc}"
 
 
 class CalculatedIndicator(models.Model):

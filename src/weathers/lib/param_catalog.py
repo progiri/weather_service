@@ -1,6 +1,6 @@
 OPEN_METEO_PARAM_CATALOG: dict[str, dict[str, str | None]] = {
     # ─────────────―― 2-метровый уровень ─────────────――
-    "date_time":            {"unit": "",   "desc_ru": "Дата и время",              "open_meteo": "time"},
+    "date_time":            {"unit": None,   "desc_ru": "Дата и время",            "open_meteo": "time"},
     "temperature":          {"unit": "°C", "desc_ru": "Температура воздуха (2 м)", "open_meteo": "temperature_2m"},
     "relative_humidity":    {"unit": "%",  "desc_ru": "Отн. влажность (2 м)",      "open_meteo": "relative_humidity_2m"},
     "dew_point":            {"unit": "°C", "desc_ru": "Точка росы (2 м)",          "open_meteo": "dew_point_2m"},
