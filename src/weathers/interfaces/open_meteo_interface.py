@@ -33,8 +33,10 @@ class OpenMeteoInterface(BaseProviderInterface):
     def __init__(
         self,
         provider: Provider,
+        provider_token: ProviderToken,
     ) -> None:
         self.provider = provider
+        self.provider_token = provider_token
         api_url = provider.config.get("api_url", "https://api.open-meteo.com/v1")
         super().__init__(api_url=api_url, credentials={} or dict(api_key=""), timeout=10)
 
@@ -109,17 +111,13 @@ class OpenMeteoInterface(BaseProviderInterface):
         Обновляет счётчики использования токена и флаги превышения лимитов.
         Ожидается credentials={"token_id": <id ProviderToken>}.
         """
-        token = self.provider.get_token()
-        if not token:
-            return
-
         now = timezone.now()
         day_key = now.strftime("%Y-%m-%d")
         month_key = now.strftime("%Y-%m")
 
         with transaction.atomic():
             stat, _ = ProviderTokenStat.objects.select_for_update().get_or_create(
-                token_id=token.id, defaults={"meta": {}}
+                token=self.provider_token, defaults={"meta": {}}
             )
             meta: Dict[str, Any] = stat.meta or {}
             usage: Dict[str, Any] = meta.get("usage") or {}
@@ -143,7 +141,7 @@ class OpenMeteoInterface(BaseProviderInterface):
 
             limits: Dict[str, Any] = meta.get("limits") or {}
             try:
-                prov_limits = (token.provider.config or {}).get("limits") or {}
+                prov_limits = (self.provider_token.provider.config or {}).get("limits") or {}
                 if prov_limits:
                     limits.update(prov_limits)
             except ProviderToken.DoesNotExist:

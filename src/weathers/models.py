@@ -5,6 +5,15 @@ from django.contrib.gis.db import models as gis_models
 from django.utils.translation import gettext_lazy as _
 
 
+def default_meteo_point_provider_status():
+    return {
+        "forecast_daily": {"last_update": None, "last_update_status": None},
+        "forecast_hourly": {"last_update": None, "last_update_status": None},
+        "history_daily": {"last_update": None, "last_update_status": None},
+        "history_hourly": {"last_update": None, "last_update_status": None}
+    }
+
+
 class Provider(models.Model):
     code = models.CharField(max_length=50, unique=True, verbose_name=_("Код провайдера"))
     name = models.CharField(max_length=255, verbose_name=_("Название провайдера"))
@@ -85,7 +94,7 @@ class MeteoPoint(models.Model):
 class MeteoPointProvider(models.Model):
     provider = models.ForeignKey(Provider, on_delete=models.CASCADE, verbose_name=_("Провайдер"))
     meteo_point = models.ForeignKey(MeteoPoint, on_delete=models.CASCADE, verbose_name=_("Метео-точка"))
-    status = JSONField(blank=True, default=dict, verbose_name=_("Статус"))
+    status = JSONField(blank=True, default=default_meteo_point_provider_status, verbose_name=_("Статус"))
     is_active = models.BooleanField(default=True, verbose_name=_("Активен"))
 
     class Meta:
@@ -138,11 +147,11 @@ class WeatherData(models.Model):
         HIST_HR = "history_hourly", _("История почасовая")
         HIST_DAY = "history_daily", _("История дневная")
 
-    meteo_point = models.ForeignKey(
-        MeteoPoint,
+    meteo_point_provider = models.ForeignKey(
+        MeteoPointProvider,
         on_delete=models.CASCADE,
         related_name="weather_data",
-        verbose_name=_("Метео-точка"),
+        verbose_name=_("Метео-точка-провайдер"),
     )
     parameter = models.CharField(
         max_length=255,
@@ -155,14 +164,14 @@ class WeatherData(models.Model):
 
     class Meta:
         indexes = [
-            models.Index(fields=["meteo_point", "timestamp_utc"]),
+            models.Index(fields=["meteo_point_provider", "timestamp_utc"]),
             models.Index(fields=["parameter", "timestamp_utc"]),
         ]
         verbose_name = _("Погодные данные")
         verbose_name_plural = _("Погодные данные")
 
     def __str__(self):
-        return f"{self.meteo_point_id} {self.parameter} {self.timestamp_utc}"
+        return f"{self.meteo_point_provider_id} {self.parameter} {self.timestamp_utc}"
 
 
 class CalculatedIndicator(models.Model):

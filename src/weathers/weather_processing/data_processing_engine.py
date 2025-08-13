@@ -6,8 +6,14 @@ from datetime import date, datetime, timezone
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from django.db import transaction
+from django.utils import timezone as django_timezone
 
-from weathers.models import MeteoPointProvider, WeatherData
+from weathers.models import (
+    MeteoPointProvider,
+    WeatherData,
+    ProviderToken,
+    default_meteo_point_provider_status
+)
 from weathers.lib.data_normalizer import DataNormalizer
 from weathers.interfaces.open_meteo_interface import OpenMeteoInterface
 from weathers.lib.param_catalog import OPEN_METEO_PARAM_CATALOG
@@ -116,9 +122,10 @@ class DataProcessEngine:
         self,
         *,
         meteo_point_provider: MeteoPointProvider,
+        provider_token: ProviderToken,
         mode: str,  # "forecast" | "history"
         normalizer: Optional[DataNormalizer] = None,
-        sections: Sequence[str] = ("hourly", "daily", "minutely_15"),
+        sections: Sequence[str] = ("hourly", "daily"),
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
         overwrite: bool = True,
@@ -131,6 +138,8 @@ class DataProcessEngine:
 
         self.point = meteo_point_provider.meteo_point
         self.provider = meteo_point_provider.provider
+        self.provider_token = provider_token
+        self.meteo_point_provider = meteo_point_provider
         self.mode = mode
         self.date_from = date_from
         self.date_to = date_to
@@ -143,7 +152,7 @@ class DataProcessEngine:
         if self.provider.code != "open_meteo":
             raise NotImplementedError(f"Provider '{self.provider.code}' is not supported yet")
 
-        self.adapter = OpenMeteoInterface(provider=self.provider)
+        self.adapter = OpenMeteoInterface(provider=self.provider, provider_token=self.provider_token)
 
     def process(self) -> Dict[str, object]:
         """
@@ -155,10 +164,11 @@ class DataProcessEngine:
             raw = self._fetch(plan)
             std = self._standardize(raw, plan.granularity)
             count = self._save_narrow(std, plan)
+            self._update_meteo_point_provider_status(plan)
             summary[plan.granularity] = count
 
         return {
-            "meteo_point_id": self.point.pk,
+            "meteo_point_provider_id": self.meteo_point_provider.pk,
             "provider": self.provider.code,
             "mode": self.mode,
             "inserted": summary,
@@ -202,7 +212,7 @@ class DataProcessEngine:
         if self.overwrite and (t_min and t_max):
             with transaction.atomic():
                 qs = WeatherData.objects.filter(
-                    meteo_point=self.point,
+                    meteo_point_provider=self.meteo_point_provider,
                     data_type=data_type,
                     timestamp_utc__gte=t_min,
                     timestamp_utc__lte=t_max,
@@ -219,7 +229,7 @@ class DataProcessEngine:
                     continue
                 objs.append(
                     WeatherData(
-                        meteo_point=self.point,
+                        meteo_point_provider=self.meteo_point_provider,
                         parameter=k,
                         timestamp_utc=ts,
                         value=v,
@@ -234,6 +244,18 @@ class DataProcessEngine:
                 inserted += len(chunk)
 
         return inserted
+
+    def _update_meteo_point_provider_status(self, plan: FetchPlan):
+        now = django_timezone.now()
+        if self.meteo_point_provider.status is None or self.meteo_point_provider.status == {}:
+            self.meteo_point_provider.status = default_meteo_point_provider_status()
+
+        data_type = plan.data_type_forecast if self.mode == "forecast" else plan.data_type_history
+
+        self.meteo_point_provider.status[data_type]["last_update"] = now.strftime("%Y-%m-%d %H:%M:%S")
+        self.meteo_point_provider.status[data_type]["last_update_status"] = "COMPLETED"
+        self.meteo_point_provider.save()
+        return
 
 
 def _parse_iso_utc(v: object) -> Optional[datetime]:
@@ -330,10 +352,22 @@ def _chunks(seq: Iterable[WeatherData], size: int) -> Iterable[List[WeatherData]
 def _span(rows: List[Dict[str, object]]) -> Tuple[Optional[datetime], Optional[datetime]]:
     times: List[datetime] = []
     for r in rows:
-        ts = _parse_iso_utc(r.get("time"))
+        ts = _parse_iso_utc(r.get("date_time"))
         if ts:
             times.append(ts)
     if not times:
         return None, None
     return min(times), max(times)
+
+
+def run():
+    mpp = MeteoPointProvider.objects.get(id=1)
+    token = ProviderToken.objects.get(id=1)
+    engine = DataProcessEngine(
+        meteo_point_provider=mpp,
+        provider_token=token,
+        mode="forecast",
+        sections=("hourly",)
+    )
+    print(engine.process())
 
