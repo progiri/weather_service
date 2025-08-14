@@ -38,7 +38,13 @@ class OpenMeteoInterface(BaseProviderInterface):
         self.provider = provider
         self.provider_token = provider_token
         api_url = provider.config.get("api_url", "https://api.open-meteo.com/v1")
-        super().__init__(api_url=api_url, credentials={} or dict(api_key=""), timeout=10)
+        archive_api_url = provider.config.get("archive_api_url", "https://archive-api.open-meteo.com/v1")
+        super().__init__(
+            api_url=api_url,
+            archive_api_url=archive_api_url,
+            credentials={} or dict(api_key=""),
+            timeout=100
+        )
 
     def get_forecast(
         self,
@@ -82,7 +88,7 @@ class OpenMeteoInterface(BaseProviderInterface):
     ) -> Mapping[str, Any]:
         self._validate_granularity(granularity)
 
-        endpoint = f"{self.api_url}/forecast"
+        endpoint = f"{self.archive_api_url}/archive"
         params = {
             "latitude": lat,
             "longitude": lon,
@@ -92,8 +98,9 @@ class OpenMeteoInterface(BaseProviderInterface):
             "timezone": "UTC",
         }
 
-        resp = self.send_request("GET", endpoint, params=params)
-        return self.parse_json(resp)
+        resp = self.stream_to_bytes("GET", endpoint, params=params)
+        return self.parse_json(resp, stream=True)
+
 
     @staticmethod
     def _forecast_horizon():

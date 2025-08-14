@@ -5,6 +5,8 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, Tuple
 
+from django.db.models.functions import TruncDate
+
 from weathers.models import (
     MeteoPointProvider,
     ProviderToken,
@@ -106,3 +108,56 @@ def should_run(link: MeteoPointProvider, period_iso: str | None, mode: str, buck
     if not last_at:
         return True
     return (now - last_at) >= period
+
+
+def missing_date_ranges(qs, start_dt, end_dt, field_name="timestamp_utc", max_days_in_range=30):
+    """
+    Находит отсутствующие ДАТЫ в интервале [start_dt, end_dt] по полю `field_name`
+    и объединяет их в непрерывные периоды. Затем режет периоды так, чтобы
+    их длина не превышала `max_days_in_range` (по умолчанию 30 дней).
+    Возвращает список периодов: [[date_start, date_end], ...].
+    Если пропуск только один день — date_start == date_end.
+    """
+    if start_dt is None or end_dt is None:
+        return []
+
+    present_dates = set(
+        qs.filter(**{f"{field_name}__gte": start_dt, f"{field_name}__lte": end_dt})
+          .annotate(d=TruncDate(field_name))
+          .values_list("d", flat=True)
+          .distinct()
+    )
+
+    cur = start_dt.date()
+    last = end_dt.date()
+    ranges, run_start, prev = [], None, None
+    one_day = timedelta(days=1)
+
+    # Собираем непрерывные пропуски
+    while cur <= last:
+        if cur not in present_dates:
+            if run_start is None:
+                run_start = cur
+            prev = cur
+        else:
+            if run_start is not None:
+                ranges.append([run_start, prev])
+                run_start = prev = None
+        cur += one_day
+    if run_start is not None:
+        ranges.append([run_start, prev])
+
+    # Режем длинные периоды на куски не длиннее max_days_in_range
+    if not ranges:
+        return []
+
+    clipped = []
+    span = max_days_in_range - 1
+    for start_date, end_date in ranges:
+        sub_start = start_date
+        while sub_start <= end_date:
+            sub_end = min(sub_start + timedelta(days=span), end_date)
+            clipped.append([sub_start, sub_end])
+            sub_start = sub_end + one_day
+
+    return clipped
