@@ -360,14 +360,3 @@ def _span(rows: List[Dict[str, object]]) -> Tuple[Optional[datetime], Optional[d
     return min(times), max(times)
 
 
-def run():
-    mpp = MeteoPointProvider.objects.get(id=1)
-    token = ProviderToken.objects.get(id=1)
-    engine = DataProcessEngine(
-        meteo_point_provider=mpp,
-        provider_token=token,
-        mode="forecast",
-        sections=("hourly",)
-    )
-    print(engine.process())
-
