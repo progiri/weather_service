@@ -60,12 +60,12 @@ _ALL_CANON = {k for k, v in OPEN_METEO_PARAM_CATALOG.items() if v.get("open_mete
 _HOURLY_CANON = sorted((_ALL_CANON - _DAILY_CANON) - {"date_time"})
 
 
-def _canon_to_provider(keys: Iterable[str]) -> List[str]:
-    """Преобразовать канонические имена в имена для Open-Meteo."""
+def _canon_to_provider(keys: Iterable[str], provider_code: str) -> List[str]:
+    """Преобразовать канонические имена в имена для Provider."""
     res: List[str] = []
     for k in keys:
         meta = OPEN_METEO_PARAM_CATALOG.get(k) or {}
-        src = meta.get("open_meteo")
+        src = meta.get(provider_code)
         if src:
             res.append(src)
     seen = set()
@@ -77,14 +77,14 @@ def _canon_to_provider(keys: Iterable[str]) -> List[str]:
     return uniq
 
 
-def _build_default_plan(sections: Sequence[str]) -> List[FetchPlan]:
+def _build_default_plan(sections: Sequence[str], provider_code: str) -> List[FetchPlan]:
     plans: List[FetchPlan] = []
     for sec in sections:
         if sec == "hourly":
             plans.append(
                 FetchPlan(
                     granularity="hourly",
-                    parameters_provider=_canon_to_provider(_HOURLY_CANON),
+                    parameters_provider=_canon_to_provider(_HOURLY_CANON, provider_code),
                     data_type_forecast=WeatherData.DataType.FCT_HR,
                     data_type_history=WeatherData.DataType.HIST_HR,
                 )
@@ -93,7 +93,7 @@ def _build_default_plan(sections: Sequence[str]) -> List[FetchPlan]:
             plans.append(
                 FetchPlan(
                     granularity="daily",
-                    parameters_provider=_canon_to_provider(sorted(_DAILY_CANON)),
+                    parameters_provider=_canon_to_provider(sorted(_DAILY_CANON), provider_code),
                     data_type_forecast=WeatherData.DataType.FCT_DAY,
                     data_type_history=WeatherData.DataType.HIST_DAY,
                 )
@@ -102,7 +102,7 @@ def _build_default_plan(sections: Sequence[str]) -> List[FetchPlan]:
             plans.append(
                 FetchPlan(
                     granularity="minutely_15",
-                    parameters_provider=_canon_to_provider(sorted(_MINUTELY15_CANON)),
+                    parameters_provider=_canon_to_provider(sorted(_MINUTELY15_CANON), provider_code),
                     data_type_forecast=WeatherData.DataType.FCT_15,
                     data_type_history=WeatherData.DataType.HIST_15,
                 )
@@ -147,12 +147,13 @@ class DataProcessEngine:
         self.save_batch = save_batch
 
         self.normalizer = normalizer or DataNormalizer()
-        self.plans = _build_default_plan(sections)
+        self.plans = _build_default_plan(sections, self.provider.code)
 
-        if self.provider.code != "open_meteo":
+        if self.provider.code == "open_meteo":
+            self.adapter = OpenMeteoInterface(provider=self.provider, provider_token=self.provider_token)
+        else:
             raise NotImplementedError(f"Provider '{self.provider.code}' is not supported yet")
 
-        self.adapter = OpenMeteoInterface(provider=self.provider, provider_token=self.provider_token)
 
     def process(self) -> Dict[str, object]:
         """
@@ -199,7 +200,7 @@ class DataProcessEngine:
         return raw
 
     def _standardize(self, payload: Mapping[str, object], granularity: str) -> Dict[str, List[Dict[str, object]]]:
-        return self.normalizer.open_meteo_standardize(dict(payload), sections=(granularity,))
+        return self.normalizer.standardize(self.mode, dict(payload), sections=(granularity,))
 
     def _save_narrow(self, standardized: Dict[str, List[Dict[str, object]]], plan: FetchPlan) -> int:
         rows = standardized.get(plan.granularity) or []
@@ -331,10 +332,7 @@ def _parse_iso_utc(v: object) -> Optional[datetime]:
                     return dt.replace(tzinfo=timezone.utc)
                 except ValueError:
                     continue
-
         return None
-
-    # 4) Иные типы — не поддерживаем
     return None
 
 

@@ -33,6 +33,15 @@ class DataNormalizer:
         self._mapping = mapping or OPEN_METEO_PARAM_CATALOG
         self._converters = converters or {}
 
+    def standardize(
+        self,
+        mode: str,
+        payload: Dict[str, Any],
+        sections: tuple[str, ...] = ("hourly", "minutely_15", "daily"),
+    ):
+        if mode == "open_meteo":
+            return self.open_meteo_standardize(payload, sections)
+
     def normalize(self, provider: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
         Вернёт dict c каноническими ключами; параметры,
