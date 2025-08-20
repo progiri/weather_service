@@ -35,11 +35,12 @@ class DataNormalizer:
 
     def standardize(
         self,
+        provider_code: str,
         mode: str,
         payload: Dict[str, Any],
         sections: tuple[str, ...] = ("hourly", "minutely_15", "daily"),
     ):
-        if mode == "open_meteo":
+        if provider_code == "open_meteo":
             return self.open_meteo_standardize(payload, sections)
 
     def normalize(self, provider: str, payload: Dict[str, Any]) -> Dict[str, Any]:

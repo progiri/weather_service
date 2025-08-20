@@ -154,7 +154,6 @@ class DataProcessEngine:
         else:
             raise NotImplementedError(f"Provider '{self.provider.code}' is not supported yet")
 
-
     def process(self) -> Dict[str, object]:
         """
         Пробегает по гранулярностям, тянет данные, нормализует и сохраняет.
@@ -200,7 +199,12 @@ class DataProcessEngine:
         return raw
 
     def _standardize(self, payload: Mapping[str, object], granularity: str) -> Dict[str, List[Dict[str, object]]]:
-        return self.normalizer.standardize(self.mode, dict(payload), sections=(granularity,))
+        return self.normalizer.standardize(
+            self.provider.code,
+            self.mode,
+            dict(payload),
+            sections=(granularity,)
+        )
 
     def _save_narrow(self, standardized: Dict[str, List[Dict[str, object]]], plan: FetchPlan) -> int:
         rows = standardized.get(plan.granularity) or []
@@ -223,17 +227,22 @@ class DataProcessEngine:
         objs: List[WeatherData] = []
         for r in rows:
             ts = _parse_iso_utc(r.get("date_time"))
+            #  ToDo: брать таймзону из компании через PointOfInterest
             if not ts:
                 continue
             for k, v in r.items():
                 if k == "date_time" or v is None:
                     continue
+                weather_value = {
+                    "raw": v,
+                    "normalized": v  # ToDo: can add a custom normalizer for some special param value
+                }
                 objs.append(
                     WeatherData(
                         meteo_point_provider=self.meteo_point_provider,
                         parameter=k,
                         timestamp_utc=ts,
-                        value=v,
+                        value=weather_value,
                         data_type=data_type,
                     )
                 )
